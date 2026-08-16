@@ -5,17 +5,17 @@
 #include <stdint.h>
 #include <wayland-client.h>
 
-struct slurp_box {
+struct scarf_box {
 	int32_t x, y;
 	int32_t width, height;
 	char *label;
 	struct wl_list link;
 };
 
-bool box_intersect(const struct slurp_box *a, const struct slurp_box *b);
+bool box_intersect(const struct scarf_box *a, const struct scarf_box *b);
 
-bool in_box(const struct slurp_box *box, int32_t x, int32_t y);
+bool in_box(const struct scarf_box *box, int32_t x, int32_t y);
 
-int32_t box_size(const struct slurp_box *box);
+int32_t box_size(const struct scarf_box *box);
 
 #endif

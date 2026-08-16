@@ -1,5 +1,5 @@
-#ifndef _SLURP_H
-#define _SLURP_H
+#ifndef _SCARF_H
+#define _SCARF_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -13,15 +13,15 @@
 
 #define TOUCH_ID_EMPTY -1
 
-struct slurp_selection {
-  struct slurp_output *current_output;
+struct scarf_selection {
+  struct scarf_output *current_output;
   int32_t x, y;
   int32_t anchor_x, anchor_y;
-  struct slurp_box selection;
+  struct scarf_box selection;
   bool has_selection;
 };
 
-struct slurp_state {
+struct scarf_state {
   bool running;
   bool edit_anchor;
 
@@ -32,8 +32,8 @@ struct slurp_state {
   struct zwlr_layer_shell_v1 *layer_shell;
   struct zxdg_output_manager_v1 *xdg_output_manager;
   struct wp_cursor_shape_manager_v1 *cursor_shape_manager;
-  struct wl_list outputs; // slurp_output::link
-  struct wl_list seats;   // slurp_seat::link
+  struct wl_list outputs; // scarf_output::link
+  struct wl_list seats;   // scarf_seat::link
 
   struct xkb_context *xkb_context;
 
@@ -52,20 +52,20 @@ struct slurp_state {
   bool restrict_selection;
   bool crosshairs;
   bool resizing_selection;
-  struct wl_list boxes; // slurp_box::link
+  struct wl_list boxes; // scarf_box::link
   bool fixed_aspect_ratio;
   double aspect_ratio; // h / w
 
-  struct slurp_box result;
+  struct scarf_box result;
 };
 
-struct slurp_output {
+struct scarf_output {
   struct wl_output *wl_output;
-  struct slurp_state *state;
-  struct wl_list link; // slurp_state::outputs
+  struct scarf_state *state;
+  struct wl_list link; // scarf_state::outputs
 
-  struct slurp_box geometry;
-  struct slurp_box logical_geometry;
+  struct scarf_box geometry;
+  struct scarf_box logical_geometry;
   int32_t scale;
 
   struct wl_surface *surface;
@@ -84,19 +84,19 @@ struct slurp_output {
   struct wl_cursor_image *cursor_image;
 };
 
-struct slurp_seat {
+struct scarf_seat {
   struct wl_surface *cursor_surface;
-  struct slurp_state *state;
+  struct scarf_state *state;
   struct wl_seat *wl_seat;
-  struct wl_list link; // slurp_state::seats
+  struct wl_list link; // scarf_state::seats
 
   // keyboard:
   struct wl_keyboard *wl_keyboard;
 
   // selection (pointer/touch):
 
-  struct slurp_selection pointer_selection;
-  struct slurp_selection touch_selection;
+  struct scarf_selection pointer_selection;
+  struct scarf_selection touch_selection;
 
   // pointer:
   struct wl_pointer *wl_pointer;
@@ -111,10 +111,10 @@ struct slurp_seat {
   int32_t touch_id;
 };
 
-bool box_intersect(const struct slurp_box *a, const struct slurp_box *b);
+bool box_intersect(const struct scarf_box *a, const struct scarf_box *b);
 
-static inline struct slurp_selection *
-slurp_seat_current_selection(struct slurp_seat *seat) {
+static inline struct scarf_selection *
+scarf_seat_current_selection(struct scarf_seat *seat) {
   return seat->touch_selection.has_selection ? &seat->touch_selection
                                              : &seat->pointer_selection;
 }

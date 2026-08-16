@@ -1,5 +1,5 @@
 project(
-	'slurp',
+	'scarf',
 	'c',
 	version: '1.5.0',
 	license: 'MIT',
@@ -21,7 +21,7 @@ xkbcommon = dependency('xkbcommon')
 subdir('protocol')
 
 executable(
-	'slurp',
+	'scarf',
 	[
 		'main.c',
 		'lock.c',
@@ -44,7 +44,7 @@ executable(
 scdoc = find_program('scdoc', required: get_option('man-pages'))
 
 if scdoc.found()
-	man_pages = ['slurp.1.scd']
+	man_pages = ['scarf.1.scd']
 
 	foreach src : man_pages
 		topic = src.split('.')[0]

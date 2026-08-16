@@ -1,8 +1,8 @@
 #ifndef _RENDER_H
 #define _RENDER_H
 
-struct slurp_output;
+struct scarf_output;
 
-void render(struct slurp_output *output);
+void render(struct scarf_output *output);
 
 #endif

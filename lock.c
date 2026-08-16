@@ -27,7 +27,7 @@ bool get_lockfile_path(char path[MAX_PATH_SIZE]) {
 		return false;
 	}
 
-	if (snprintf(path, MAX_PATH_SIZE, "%s/slurp-%s.lock", runtime_dir, display) >= MAX_PATH_SIZE) {
+	if (snprintf(path, MAX_PATH_SIZE, "%s/scarf-%s.lock", runtime_dir, display) >= MAX_PATH_SIZE) {
 		fprintf(stderr, "lockfile path was too long\n");
 		return false;
 	}
@@ -47,7 +47,7 @@ bool acquire_lock() {
 		return false;
 	}
 	if (flock(fd, LOCK_EX|LOCK_NB)) {
-		fprintf(stderr, "another slurp process is running for this wayland session\n");
+		fprintf(stderr, "another scarf process is running for this wayland session\n");
 		return false;
 	}
 	return true;

@@ -57,13 +57,11 @@ swaymsg -t get_tree | jq -r '.. | select(.pid? and .visible?) | "\(.rect.x+.wind
 ```
 ## Contributing
 
-Either [send GitHub pull requests][GitHub] or [send patches on the mailing list][ML].
+[Send GitHub pull requests][GitHub].
 
 ## License
 
 MIT
 
 [grim]: https://gitlab.freedesktop.org/emersion/grim
-[IRC]: https://web.libera.chat/gamja/#emersion
-[GitHub]: https://github.com/emersion/scarf
-[ML]: https://lists.sr.ht/%7Eemersion/public-inbox
+[GitHub]: https://github.com/m-bartlett/scarf

@@ -11,7 +11,7 @@
 #include <xkbcommon/xkbcommon.h>
 #include <linux/input-event-codes.h>
 
-#include "slurp.h"
+#include "scarf.h"
 #include "render.h"
 #include "lock.h"
 
@@ -24,7 +24,7 @@ static void noop() {
 	// This space intentionally left blank
 }
 
-static void set_output_dirty(struct slurp_output *output);
+static void set_output_dirty(struct scarf_output *output);
 
 static int max(int a, int b) {
 	return (a > b) ? a : b;
@@ -34,12 +34,12 @@ static int min(int a, int b) {
 	return (a < b) ? a : b;
 }
 
-static struct slurp_output *output_from_surface(struct slurp_state *state,
+static struct scarf_output *output_from_surface(struct scarf_state *state,
 	struct wl_surface *surface);
 
-static void move_seat(struct slurp_seat *seat, wl_fixed_t surface_x,
+static void move_seat(struct scarf_seat *seat, wl_fixed_t surface_x,
 		wl_fixed_t surface_y,
-		struct slurp_selection *current_selection) {
+		struct scarf_selection *current_selection) {
 	int x = wl_fixed_to_int(surface_x) +
 		current_selection->current_output->logical_geometry.x;
 	int y = wl_fixed_to_int(surface_y) + current_selection->current_output->logical_geometry.y;
@@ -53,11 +53,11 @@ static void move_seat(struct slurp_seat *seat, wl_fixed_t surface_x,
 	current_selection->y = y;
 }
 
-static void seat_update_selection(struct slurp_seat *seat) {
+static void seat_update_selection(struct scarf_seat *seat) {
 	seat->pointer_selection.has_selection = false;
 
 	// find smallest box intersecting the cursor
-	struct slurp_box *box;
+	struct scarf_box *box;
 	wl_list_for_each(box, &seat->state->boxes, link) {
 		if (in_box(box, seat->pointer_selection.x,
 			   seat->pointer_selection.y)) {
@@ -73,11 +73,11 @@ static void seat_update_selection(struct slurp_seat *seat) {
 	}
 }
 
-static void seat_set_outputs_dirty(struct slurp_seat *seat) {
-	struct slurp_state *state = seat->state;
-	struct slurp_output *output;
+static void seat_set_outputs_dirty(struct scarf_seat *seat) {
+	struct scarf_state *state = seat->state;
+	struct scarf_output *output;
 	wl_list_for_each(output, &seat->state->outputs, link) {
-		struct slurp_box *geometry = &output->logical_geometry;
+		struct scarf_box *geometry = &output->logical_geometry;
 		if (box_intersect(geometry, &seat->pointer_selection.selection) ||
 				box_intersect(geometry, &seat->touch_selection.selection) ||
 				(state->crosshairs && in_box(geometry, seat->pointer_selection.x, seat->pointer_selection.y))) {
@@ -86,7 +86,7 @@ static void seat_set_outputs_dirty(struct slurp_seat *seat) {
 	}
 }
 
-static void handle_active_selection_motion(struct slurp_seat *seat, struct slurp_selection *current_selection) {
+static void handle_active_selection_motion(struct scarf_seat *seat, struct scarf_selection *current_selection) {
 	if(seat->state->restrict_selection){
 		return;
 	}
@@ -115,8 +115,8 @@ static void handle_active_selection_motion(struct slurp_seat *seat, struct slurp
 static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer,
 		uint32_t serial, struct wl_surface *surface,
 		wl_fixed_t surface_x, wl_fixed_t surface_y) {
-	struct slurp_seat *seat = data;
-	struct slurp_output *output = output_from_surface(seat->state, surface);
+	struct scarf_seat *seat = data;
+	struct scarf_output *output = output_from_surface(seat->state, surface);
 	if (output == NULL) {
 		return;
 	}
@@ -162,7 +162,7 @@ static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer,
 
 static void pointer_handle_leave(void *data, struct wl_pointer *wl_pointer,
 		uint32_t serial, struct wl_surface *surface) {
-	struct slurp_seat *seat = data;
+	struct scarf_seat *seat = data;
 
 	// TODO: handle multiple overlapping outputs
 	seat->pointer_selection.current_output = NULL;
@@ -170,8 +170,8 @@ static void pointer_handle_leave(void *data, struct wl_pointer *wl_pointer,
 
 static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
 		uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
-	struct slurp_seat *seat = data;
-	struct slurp_state *state = seat->state;
+	struct scarf_seat *seat = data;
+	struct scarf_state *state = seat->state;
 
 	// the places the cursor moved away from are also dirty
 	if (seat->pointer_selection.has_selection || state->crosshairs) {
@@ -194,9 +194,9 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
 	}
 }
 
-static void handle_selection_start(struct slurp_seat *seat,
-				   struct slurp_selection *current_selection) {
-	struct slurp_state *state = seat->state;
+static void handle_selection_start(struct scarf_seat *seat,
+				   struct scarf_selection *current_selection) {
+	struct scarf_state *state = seat->state;
 
 	if (state->single_point) {
 		state->result.x = current_selection->x;
@@ -214,9 +214,9 @@ static void handle_selection_start(struct slurp_seat *seat,
 	}
 }
 
-static void handle_selection_end(struct slurp_seat *seat,
-				 struct slurp_selection *current_selection) {
-	struct slurp_state *state = seat->state;
+static void handle_selection_end(struct scarf_seat *seat,
+				 struct scarf_selection *current_selection) {
+	struct scarf_state *state = seat->state;
 	if (state->single_point || state->restrict_selection) {
 		return;
 	}
@@ -231,8 +231,8 @@ static void handle_selection_end(struct slurp_seat *seat,
 	state->running = false;
 }
 
-static void handle_selection_cancelled(struct slurp_seat *seat) {
-	struct slurp_state *state = seat->state;
+static void handle_selection_cancelled(struct scarf_seat *seat) {
+	struct scarf_state *state = seat->state;
 	seat->pointer_selection.has_selection = false;
 	seat->touch_selection.has_selection = false;
 	state->edit_anchor = false;
@@ -242,7 +242,7 @@ static void handle_selection_cancelled(struct slurp_seat *seat) {
 static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
 		uint32_t serial, uint32_t time, uint32_t button,
 		uint32_t button_state) {
-	struct slurp_seat *seat = data;
+	struct scarf_seat *seat = data;
 	if (seat->touch_selection.has_selection) {
 		return;
 	}
@@ -275,7 +275,7 @@ static const struct wl_pointer_listener pointer_listener = {
 
 static void keyboard_handle_keymap(void *data, struct wl_keyboard *wl_keyboard,
 		const uint32_t format, const int32_t fd, const uint32_t size) {
-	struct slurp_seat *seat = data;
+	struct scarf_seat *seat = data;
 	switch (format) {
 	case WL_KEYBOARD_KEYMAP_FORMAT_NO_KEYMAP:
 		seat->xkb_keymap = xkb_keymap_new_from_names(seat->state->xkb_context, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS);
@@ -299,10 +299,10 @@ static void keyboard_handle_keymap(void *data, struct wl_keyboard *wl_keyboard,
 }
 
 // Recompute the selection if the aspect ratio changed.
-static void recompute_selection(struct slurp_seat *seat) {
-	struct slurp_selection *current = slurp_seat_current_selection(seat);
+static void recompute_selection(struct scarf_seat *seat) {
+	struct scarf_selection *current = scarf_seat_current_selection(seat);
 	if (current->has_selection) {
-		handle_active_selection_motion(seat, slurp_seat_current_selection(seat));
+		handle_active_selection_motion(seat, scarf_seat_current_selection(seat));
 		seat_set_outputs_dirty(seat);
 	}
 }
@@ -310,8 +310,8 @@ static void recompute_selection(struct slurp_seat *seat) {
 static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 		const uint32_t serial, const uint32_t time, const uint32_t key,
 		const uint32_t key_state) {
-	struct slurp_seat *seat = data;
-	struct slurp_state *state = seat->state;
+	struct scarf_seat *seat = data;
+	struct scarf_state *state = seat->state;
 	const xkb_keysym_t keysym = xkb_state_key_get_one_sym(seat->xkb_state, key + 8);
 
 	switch (key_state) {
@@ -358,7 +358,7 @@ static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboar
 		const uint32_t serial, const uint32_t mods_depressed,
 		const uint32_t mods_latched, const uint32_t mods_locked,
 		const uint32_t group) {
-	struct slurp_seat *seat = data;
+	struct scarf_seat *seat = data;
 	xkb_state_update_mask(seat->xkb_state, mods_depressed, mods_latched,
 			mods_locked, 0, 0, group);
 }
@@ -375,7 +375,7 @@ static void touch_handle_down(void *data, struct wl_touch *touch,
 		uint32_t serial, uint32_t time,
 		struct wl_surface *surface, int32_t id,
 		wl_fixed_t x, wl_fixed_t y) {
-	struct slurp_seat *seat = data;
+	struct scarf_seat *seat = data;
 	if (seat->pointer_selection.has_selection) {
 		return;
 	}
@@ -388,14 +388,14 @@ static void touch_handle_down(void *data, struct wl_touch *touch,
 	}
 }
 
-static void touch_clear_state(struct slurp_seat *seat) {
+static void touch_clear_state(struct scarf_seat *seat) {
 	seat->touch_id = TOUCH_ID_EMPTY;
 	seat->touch_selection.current_output = NULL;
 }
 
 static void touch_handle_up(void *data, struct wl_touch *touch, uint32_t serial,
 		uint32_t time, int32_t id) {
-	struct slurp_seat *seat = data;
+	struct scarf_seat *seat = data;
 	handle_selection_end(seat, &seat->touch_selection);
 	touch_clear_state(seat);
 }
@@ -403,7 +403,7 @@ static void touch_handle_up(void *data, struct wl_touch *touch, uint32_t serial,
 static void touch_handle_motion(void *data, struct wl_touch *touch,
 		uint32_t time, int32_t id, wl_fixed_t x,
 		wl_fixed_t y) {
-	struct slurp_seat *seat = data;
+	struct scarf_seat *seat = data;
 	if (seat->touch_id == id) {
 		move_seat(seat, x, y, &seat->touch_selection);
 		handle_active_selection_motion(seat, &seat->touch_selection);
@@ -412,7 +412,7 @@ static void touch_handle_motion(void *data, struct wl_touch *touch,
 }
 
 static void touch_handle_cancel(void *data, struct wl_touch *touch) {
-	struct slurp_seat *seat = data;
+	struct scarf_seat *seat = data;
 	touch_clear_state(seat);
 }
 
@@ -428,7 +428,7 @@ static const struct wl_touch_listener touch_listener = {
 
 static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
 		uint32_t capabilities) {
-	struct slurp_seat *seat = data;
+	struct scarf_seat *seat = data;
 
 	if (capabilities & WL_SEAT_CAPABILITY_POINTER) {
 		seat->wl_pointer = wl_seat_get_pointer(wl_seat);
@@ -448,8 +448,8 @@ static const struct wl_seat_listener seat_listener = {
 	.capabilities = seat_handle_capabilities,
 };
 
-static void create_seat(struct slurp_state *state, struct wl_seat *wl_seat) {
-	struct slurp_seat *seat = calloc(1, sizeof(struct slurp_seat));
+static void create_seat(struct scarf_state *state, struct wl_seat *wl_seat) {
+	struct scarf_seat *seat = calloc(1, sizeof(struct scarf_seat));
 	if (seat == NULL) {
 		fprintf(stderr, "allocation failed\n");
 		return;
@@ -461,7 +461,7 @@ static void create_seat(struct slurp_state *state, struct wl_seat *wl_seat) {
 	wl_seat_add_listener(wl_seat, &seat_listener, seat);
 }
 
-static void destroy_seat(struct slurp_seat *seat) {
+static void destroy_seat(struct scarf_seat *seat) {
 	wl_list_remove(&seat->link);
 	wl_surface_destroy(seat->cursor_surface);
 	if (seat->wl_pointer) {
@@ -483,7 +483,7 @@ static void output_handle_geometry(void *data, struct wl_output *wl_output,
 		int32_t x, int32_t y, int32_t physical_width, int32_t physical_height,
 		int32_t subpixel, const char *make, const char *model,
 		int32_t transform) {
-	struct slurp_output *output = data;
+	struct scarf_output *output = data;
 
 	output->geometry.x = x;
 	output->geometry.y = y;
@@ -491,7 +491,7 @@ static void output_handle_geometry(void *data, struct wl_output *wl_output,
 
 static void output_handle_mode(void *data, struct wl_output *wl_output,
 		uint32_t flags, int32_t width, int32_t height, int32_t refresh) {
-	struct slurp_output *output = data;
+	struct scarf_output *output = data;
 	if ((flags & WL_OUTPUT_MODE_CURRENT) == 0) {
 		return;
 	}
@@ -501,7 +501,7 @@ static void output_handle_mode(void *data, struct wl_output *wl_output,
 
 static void output_handle_scale(void *data, struct wl_output *wl_output,
 		int32_t scale) {
-	struct slurp_output *output = data;
+	struct scarf_output *output = data;
 
 	output->scale = scale;
 }
@@ -515,20 +515,20 @@ static const struct wl_output_listener output_listener = {
 
 static void xdg_output_handle_logical_position(void *data,
 		struct zxdg_output_v1 *xdg_output, int32_t x, int32_t y) {
-	struct slurp_output *output = data;
+	struct scarf_output *output = data;
 	output->logical_geometry.x = x;
 	output->logical_geometry.y = y;
 }
 
 static void xdg_output_handle_logical_size(void *data,
 		struct zxdg_output_v1 *xdg_output, int32_t width, int32_t height) {
-	struct slurp_output *output = data;
+	struct scarf_output *output = data;
 	output->logical_geometry.width = width;
 	output->logical_geometry.height = height;
 }
 
 static void xdg_output_handle_name(void *data, struct zxdg_output_v1 *xdg_output, const char *name) {
-	struct slurp_output *output = data;
+	struct scarf_output *output = data;
 	output->logical_geometry.label = strdup(name);
 }
 
@@ -540,9 +540,9 @@ static const struct zxdg_output_v1_listener xdg_output_listener = {
 	.description = noop,
 };
 
-static void create_output(struct slurp_state *state,
+static void create_output(struct scarf_state *state,
 		struct wl_output *wl_output) {
-	struct slurp_output *output = calloc(1, sizeof(struct slurp_output));
+	struct scarf_output *output = calloc(1, sizeof(struct scarf_output));
 	if (output == NULL) {
 		fprintf(stderr, "allocation failed\n");
 		return;
@@ -555,7 +555,7 @@ static void create_output(struct slurp_state *state,
 	wl_output_add_listener(wl_output, &output_listener, output);
 }
 
-static void destroy_output(struct slurp_output *output) {
+static void destroy_output(struct scarf_output *output) {
 	if (output == NULL) {
 		return;
 	}
@@ -580,8 +580,8 @@ static void destroy_output(struct slurp_output *output) {
 
 static const struct wl_callback_listener output_frame_listener;
 
-static void send_frame(struct slurp_output *output) {
-	struct slurp_state *state = output->state;
+static void send_frame(struct scarf_output *output) {
+	struct scarf_state *state = output->state;
 
 	if (!output->configured) {
 		return;
@@ -620,7 +620,7 @@ static void send_frame(struct slurp_output *output) {
 
 static void output_frame_handle_done(void *data, struct wl_callback *callback,
 		uint32_t time) {
-	struct slurp_output *output = data;
+	struct scarf_output *output = data;
 
 	wl_callback_destroy(callback);
 	output->frame_callback = NULL;
@@ -634,7 +634,7 @@ static const struct wl_callback_listener output_frame_listener = {
 	.done = output_frame_handle_done,
 };
 
-static void set_output_dirty(struct slurp_output *output) {
+static void set_output_dirty(struct scarf_output *output) {
 	output->dirty = true;
 	if (output->frame_callback) {
 		return;
@@ -646,9 +646,9 @@ static void set_output_dirty(struct slurp_output *output) {
 	wl_surface_commit(output->surface);
 }
 
-static struct slurp_output *output_from_surface(struct slurp_state *state,
+static struct scarf_output *output_from_surface(struct scarf_state *state,
 		struct wl_surface *surface) {
-	struct slurp_output *output;
+	struct scarf_output *output;
 	wl_list_for_each(output, &state->outputs, link) {
 		if (output->surface == surface) {
 			return output;
@@ -661,7 +661,7 @@ static struct slurp_output *output_from_surface(struct slurp_state *state,
 static void layer_surface_handle_configure(void *data,
 		struct zwlr_layer_surface_v1 *surface,
 		uint32_t serial, uint32_t width, uint32_t height) {
-	struct slurp_output *output = data;
+	struct scarf_output *output = data;
 
 	output->configured = true;
 	output->width = width;
@@ -673,7 +673,7 @@ static void layer_surface_handle_configure(void *data,
 
 static void layer_surface_handle_closed(void *data,
 		struct zwlr_layer_surface_v1 *surface) {
-	struct slurp_output *output = data;
+	struct scarf_output *output = data;
 	destroy_output(output);
 }
 
@@ -685,7 +685,7 @@ static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 
 static void handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
-	struct slurp_state *state = data;
+	struct scarf_state *state = data;
 
 	if (strcmp(interface, wl_compositor_interface.name) == 0) {
 		state->compositor = wl_registry_bind(registry, name,
@@ -719,7 +719,7 @@ static const struct wl_registry_listener registry_listener = {
 };
 
 static const char usage[] =
-	"Usage: slurp [options...]\n"
+	"Usage: scarf [options...]\n"
 	"\n"
 	"  -h           Show help message and quit.\n"
 	"  -d           Display dimensions of selection.\n"
@@ -754,10 +754,10 @@ uint32_t parse_color(const char *color) {
 	return res;
 }
 
-static struct slurp_output *output_from_box(const struct slurp_box *box, struct wl_list *outputs) {
-	struct slurp_output *output;
+static struct scarf_output *output_from_box(const struct scarf_box *box, struct wl_list *outputs) {
+	struct scarf_output *output;
 	wl_list_for_each(output, outputs, link) {
-		struct slurp_box *geometry = &output->logical_geometry;
+		struct scarf_box *geometry = &output->logical_geometry;
 		// For now just use the top-left corner
 		if (in_box(geometry, box->x, box->y)) {
 			return output;
@@ -766,10 +766,10 @@ static struct slurp_output *output_from_box(const struct slurp_box *box, struct 
 	return NULL;
 }
 
-static void print_output_name(FILE *stream, const struct slurp_box *result, struct wl_list *outputs) {
-	struct slurp_output *output = output_from_box(result, outputs);
+static void print_output_name(FILE *stream, const struct scarf_box *result, struct wl_list *outputs) {
+	struct scarf_output *output = output_from_box(result, outputs);
 	if (output) {
-		struct slurp_box *geometry = &output->logical_geometry;
+		struct scarf_box *geometry = &output->logical_geometry;
 		if (geometry->label) {
 			fprintf(stream, "%s", geometry->label);
 			return;
@@ -778,8 +778,8 @@ static void print_output_name(FILE *stream, const struct slurp_box *result, stru
 	fprintf(stream, "<unknown>");
 }
 
-static void print_formatted_result(FILE *stream, struct slurp_state *state , const char *format) {
-	struct slurp_output *output = output_from_box(&state->result, &state->outputs);
+static void print_formatted_result(FILE *stream, struct scarf_state *state , const char *format) {
+	struct scarf_output *output = output_from_box(&state->result, &state->outputs);
 	for (size_t i = 0; format[i] != '\0'; i++) {
 		char c = format[i];
 		if (c == '%') {
@@ -833,9 +833,9 @@ static void print_formatted_result(FILE *stream, struct slurp_state *state , con
 	}
 }
 
-static void add_choice_box(struct slurp_state *state,
-		const struct slurp_box *box) {
-	struct slurp_box *b = calloc(1, sizeof(struct slurp_box));
+static void add_choice_box(struct scarf_state *state,
+		const struct scarf_box *box) {
+	struct scarf_box *b = calloc(1, sizeof(struct scarf_box));
 	if (b == NULL) {
 		fprintf(stderr, "allocation failed\n");
 		return;
@@ -848,7 +848,7 @@ static void add_choice_box(struct slurp_state *state,
 	wl_list_insert(state->boxes.prev, &b->link);
 }
 
-static bool create_cursors(struct slurp_state *state) {
+static bool create_cursors(struct scarf_state *state) {
 	const char *cursor_theme = getenv("XCURSOR_THEME");
 	const char *cursor_size_str = getenv("XCURSOR_SIZE");
 	int cursor_size = 24;
@@ -862,7 +862,7 @@ static bool create_cursors(struct slurp_state *state) {
 		}
 	}
 
-	struct slurp_output *output;
+	struct scarf_output *output;
 	wl_list_for_each(output, &state->outputs, link) {
 		output->cursor_theme = wl_cursor_theme_load(cursor_theme,
 			cursor_size * output->scale, state->shm);
@@ -890,7 +890,7 @@ static bool create_cursors(struct slurp_state *state) {
 int main(int argc, char *argv[]) {
 	int status = EXIT_SUCCESS;
 
-	struct slurp_state state = {
+	struct scarf_state state = {
 		.colors = {
 			.background = BG_COLOR,
 			.border = BORDER_COLOR,
@@ -991,7 +991,7 @@ int main(int argc, char *argv[]) {
 		char *line = NULL;
 		size_t line_size = 0;
 		while (getline(&line, &line_size, stdin) >= 0) {
-			struct slurp_box in_box = {0};
+			struct scarf_box in_box = {0};
 			if (sscanf(line, "%d,%d %dx%d %m[^\n]", &in_box.x, &in_box.y,
 					&in_box.width, &in_box.height, &in_box.label) < 4) {
 				fprintf(stderr, "invalid box format: %s\n", line);
@@ -1041,7 +1041,7 @@ int main(int argc, char *argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	struct slurp_output *output;
+	struct scarf_output *output;
 	wl_list_for_each(output, &state.outputs, link) {
 		output->surface = wl_compositor_create_surface(state.compositor);
 		// TODO: wl_surface_add_listener(output->surface, &surface_listener, output);
@@ -1081,13 +1081,13 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (output_boxes) {
-		struct slurp_output *box_output;
+		struct scarf_output *box_output;
 		wl_list_for_each(box_output, &state.outputs, link) {
 			add_choice_box(&state, &box_output->logical_geometry);
 		}
 	}
 
-	struct slurp_seat *seat;
+	struct scarf_seat *seat;
 	wl_list_for_each(seat, &state.seats, link) {
 		seat->cursor_surface =
 			wl_compositor_create_surface(state.compositor);
@@ -1109,11 +1109,11 @@ int main(int argc, char *argv[]) {
 		fclose(stream);
 	}
 
-	struct slurp_output *output_tmp;
+	struct scarf_output *output_tmp;
 	wl_list_for_each_safe(output, output_tmp, &state.outputs, link) {
 		destroy_output(output);
 	}
-	struct slurp_seat *seat_tmp;
+	struct scarf_seat *seat_tmp;
 	wl_list_for_each_safe(seat, seat_tmp, &state.seats, link) {
 		destroy_seat(seat);
 	}
@@ -1134,7 +1134,7 @@ int main(int argc, char *argv[]) {
 	xkb_context_unref(state.xkb_context);
 	wl_display_disconnect(state.display);
 
-	struct slurp_box *box, *box_tmp;
+	struct scarf_box *box, *box_tmp;
 	wl_list_for_each_safe(box, box_tmp, &state.boxes, link) {
 		wl_list_remove(&box->link);
 		free(box->label);

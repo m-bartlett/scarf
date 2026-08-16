@@ -1,20 +1,20 @@
-slurp(1)
+scarf(1)
 
 # NAME
 
-slurp - select a region in a Wayland compositor
+scarf - Wayland screen area fetcher.
 
 # SYNOPSIS
 
-*slurp* [options...]
+*scarf* [options...]
 
 # DESCRIPTION
 
-slurp is a command-line utility to select a region from Wayland compositors
+scarf is a command-line utility to select a region from Wayland compositors
 which support the layer-shell protocol. It lets the user hold the pointer to
 select, or click to cancel the selection.
 
-If the standard input is not a TTY or the -r option is used, slurp will read a
+If the standard input is not a TTY or the -r option is used, scarf will read a
 list of predefined rectangles for quick selection. Each line must be in the form
 "<x>,<y> <width>x<height> [label]". The label is optional and can be any string
 that doesn't contain newlines. It can be accessed using the "%l" sequence in a
@@ -116,7 +116,7 @@ The default format is "%x,%y %wx%h" followed by a newline.
 
 The following keyboard actions can be used during selection:
 
-*Escape*	Cancel the selection and exit slurp
+*Escape*	Cancel the selection and exit scarf
 
 *Space*	 If currently making a selection, while space is held down, move the
 entire selection rather than change the selection's size as you move the
@@ -130,6 +130,6 @@ feedback.
 
 # AUTHORS
 
-Maintained by Simon Ser <contact@emersion.fr>, who is assisted by other
-open-source contributors. For more information about slurp development, see
-https://github.com/emersion/slurp.
+Maintained by m-bartlett <michael@mbartlett.dev>, who is assisted by other
+open-source contributors. For more information about scarf development, see
+https://github.com/m-bartlett/scarf.

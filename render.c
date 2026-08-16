@@ -4,7 +4,7 @@
 
 #include "pool-buffer.h"
 #include "render.h"
-#include "slurp.h"
+#include "scarf.h"
 
 static void set_source_u32(cairo_t *cairo, uint32_t color) {
 	cairo_set_source_rgba(cairo, (color >> (3 * 8) & 0xFF) / 255.0,
@@ -13,14 +13,14 @@ static void set_source_u32(cairo_t *cairo, uint32_t color) {
 		(color >> (0 * 8) & 0xFF) / 255.0);
 }
 
-static void draw_rect(cairo_t *cairo, struct slurp_box *box, uint32_t color) {
+static void draw_rect(cairo_t *cairo, struct scarf_box *box, uint32_t color) {
 	set_source_u32(cairo, color);
 	cairo_rectangle(cairo, box->x, box->y,
 			box->width, box->height);
 }
 
-void render(struct slurp_output *output) {
-	struct slurp_state *state = output->state;
+void render(struct scarf_output *output) {
+	struct scarf_state *state = output->state;
 	struct pool_buffer *buffer = output->current_buffer;
 	cairo_t *cairo = buffer->cairo;
 
@@ -30,7 +30,7 @@ void render(struct slurp_output *output) {
 	cairo_paint(cairo);
 
 	// Draw option boxes from input
-	struct slurp_box *choice_box;
+	struct scarf_box *choice_box;
 	wl_list_for_each(choice_box, &state->boxes, link) {
 		if (box_intersect(&output->logical_geometry,
 					choice_box)) {
@@ -39,13 +39,13 @@ void render(struct slurp_output *output) {
 		}
 	}
 
-	struct slurp_seat *seat;
+	struct scarf_seat *seat;
 	wl_list_for_each(seat, &state->seats, link) {
-		struct slurp_selection *current_selection =
-			slurp_seat_current_selection(seat);
+		struct scarf_selection *current_selection =
+			scarf_seat_current_selection(seat);
 
 		if (!current_selection->has_selection && state->crosshairs) {
-			struct slurp_box *output_box = &output->logical_geometry;
+			struct scarf_box *output_box = &output->logical_geometry;
 			if (in_box(output_box, current_selection->x, current_selection->y)) {
 
 				set_source_u32(cairo, state->colors.border);
@@ -64,7 +64,7 @@ void render(struct slurp_output *output) {
 			&current_selection->selection)) {
 			continue;
 		}
-		struct slurp_box *sel_box = &current_selection->selection;
+		struct scarf_box *sel_box = &current_selection->selection;
 
 		draw_rect(cairo, sel_box, state->colors.selection);
 		cairo_fill(cairo);
