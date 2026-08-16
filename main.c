@@ -721,20 +721,19 @@ static const struct wl_registry_listener registry_listener = {
 static const char usage[] =
 	"Usage: scarf [options...]\n"
 	"\n"
-	"  -h           Show help message and quit.\n"
-	"  -d           Display dimensions of selection.\n"
-	"  -b #rrggbbaa Set background color.\n"
-	"  -c #rrggbbaa Set border color.\n"
-	"  -s #rrggbbaa Set selection color.\n"
-	"  -B #rrggbbaa Set option box color.\n"
-	"  -F s         Set the font family for the dimensions.\n"
-	"  -w n         Set border weight.\n"
-	"  -f s         Set output format.\n"
-	"  -o           Select a display output.\n"
-	"  -p           Select a single point.\n"
-	"  -r           Restrict selection to predefined boxes.\n"
-	"  -a w:h       Force aspect ratio.\n"
-	"  -x           Display crosshairs across active display output.\n";
+	"  -h, --help              Show help message and quit.\n"
+	"  -b, --background #rrggbbaa  Set background color.\n"
+	"  -c, --border-color #rrggbbaa  Set border color.\n"
+	"  -s, --selection-color #rrggbbaa  Set selection color.\n"
+	"  -B, --choice-color #rrggbbaa  Set option box color.\n"
+	"  -F, --font-family s     Set the font family for the geometry label.\n"
+	"  -w, --border-weight n   Set border weight.\n"
+	"  -f, --format s          Set output format.\n"
+	"  -o, --outputs           Select a display output.\n"
+	"  -p, --point             Select a single point.\n"
+	"  -r, --restrict          Restrict selection to predefined boxes.\n"
+	"  -a, --aspect-ratio w:h  Force aspect ratio.\n"
+	"  -x, --crosshairs        Display crosshairs across active display output.\n";
 
 uint32_t parse_color(const char *color) {
 	if (color[0] == '#') {
@@ -898,7 +897,6 @@ int main(int argc, char *argv[]) {
 			.choice = BG_COLOR,
 		},
 		.border_weight = 2,
-		.display_dimensions = false,
 		.restrict_selection = false,
 		.resizing_selection = false,
 		.fixed_aspect_ratio = false,
@@ -910,14 +908,28 @@ int main(int argc, char *argv[]) {
 	char *format = "%x,%y %wx%h\n";
 	bool output_boxes = false;
 	int w, h;
-	while ((opt = getopt(argc, argv, "hdb:c:s:B:w:proa:f:F:x")) != -1) {
+	static const struct option long_options[] = {
+		{"help",            no_argument,       NULL, 'h'},
+		{"background",      required_argument, NULL, 'b'},
+		{"border-color",    required_argument, NULL, 'c'},
+		{"selection-color", required_argument, NULL, 's'},
+		{"choice-color",    required_argument, NULL, 'B'},
+		{"border-weight",   required_argument, NULL, 'w'},
+		{"point",           no_argument,       NULL, 'p'},
+		{"restrict",        no_argument,       NULL, 'r'},
+		{"outputs",         no_argument,       NULL, 'o'},
+		{"aspect-ratio",    required_argument, NULL, 'a'},
+		{"format",          required_argument, NULL, 'f'},
+		{"font-family",     required_argument, NULL, 'F'},
+		{"crosshairs",      no_argument,       NULL, 'x'},
+		{0, 0, 0, 0},
+	};
+	while ((opt = getopt_long(argc, argv, "hb:c:s:B:w:proa:f:F:x",
+			long_options, NULL)) != -1) {
 		switch (opt) {
 		case 'h':
 			printf("%s", usage);
 			return EXIT_SUCCESS;
-		case 'd':
-			state.display_dimensions = true;
-			break;
 		case 'b':
 			state.colors.background = parse_color(optarg);
 			break;
