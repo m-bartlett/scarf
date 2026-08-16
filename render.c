@@ -60,6 +60,37 @@ void render(struct scarf_output *output) {
 			continue;
 		}
 
+		// Single-point mode: draw a circle at the point using the border
+		// color/weight, and print the coordinates underneath.
+		if (state->single_point) {
+			struct scarf_box *pt = &current_selection->selection;
+			if (!in_box(&output->logical_geometry, pt->x, pt->y)) {
+				continue;
+			}
+			double radius = state->border_weight * 3;
+			if (radius < 4) {
+				radius = 4;
+			}
+			cairo_set_line_width(cairo, state->border_weight);
+			set_source_u32(cairo, state->colors.border);
+			cairo_new_sub_path(cairo);
+			cairo_arc(cairo, pt->x + 0.5, pt->y + 0.5, radius,
+				  0, 2 * 3.14159265358979323846);
+			cairo_stroke(cairo);
+
+			cairo_select_font_face(cairo, state->font_family,
+					       CAIRO_FONT_SLANT_NORMAL,
+					       CAIRO_FONT_WEIGHT_NORMAL);
+			cairo_set_font_size(cairo, 14);
+			set_source_u32(cairo, state->colors.border);
+			char coords[24];
+			snprintf(coords, sizeof(coords), "%d,%d", pt->x, pt->y);
+			cairo_move_to(cairo, pt->x + radius + 4,
+				      pt->y + radius + 16);
+			cairo_show_text(cairo, coords);
+			continue;
+		}
+
 		if (!box_intersect(&output->logical_geometry,
 			&current_selection->selection)) {
 			continue;
