@@ -11,8 +11,11 @@ scarf - Wayland screen area fetcher.
 # DESCRIPTION
 
 scarf is a command-line utility to select a region from Wayland compositors
-which support the layer-shell protocol. It lets the user hold the pointer to
-select, or click to cancel the selection.
+which support the layer-shell protocol. Drag with the pointer to create a
+selection. The selection is not confirmed on mouse-up; instead it remains on
+screen and can be adjusted with the keyboard (see *KEYBOARD CONTROLS*). Press
+_Enter_ to confirm the selection and print its geometry to standard output, or
+press _q_/_Esc_ to cancel (scarf then exits with status 1 and prints nothing).
 
 If the standard input is not a TTY or the -r option is used, scarf will read a
 list of predefined rectangles for quick selection. Each line must be in the form
@@ -20,8 +23,9 @@ list of predefined rectangles for quick selection. Each line must be in the form
 that doesn't contain newlines. It can be accessed using the "%l" sequence in a
 format string.
 
-If the _Esc_ key is pressed, selection is cancelled. If the _Space_ key is
-held, the selection is moved instead of being resized.
+While making a selection, the "X,Y WxH" geometry of the current selection is
+drawn above the selection rectangle, or below it if there is not enough room at
+the top of the screen.
 
 # OPTIONS
 
@@ -113,18 +117,40 @@ The default format is "%x,%y %wx%h" followed by a newline.
 
 # KEYBOARD CONTROLS
 
-The following keyboard actions can be used during selection:
+The following keyboard actions can be used during selection. They apply to the
+current selection rectangle (or point in *-p* mode).
 
-*Escape*	Cancel the selection and exit scarf
+*Enter*/*Return*	Confirm the current selection, print its geometry to standard
+output, and exit.
+
+*q*/*Escape*	Cancel the selection, print nothing, and exit with status 1.
+
+*Arrow keys* / *h j k l*	Move the entire selection rectangle in the respective
+direction by 1 pixel, without changing its dimensions.
+
+*Shift + Arrow/hjkl*	Move the selection rectangle as above, but by 10 pixel
+increments.
+
+*Ctrl + Arrow/hjkl*	Change the selection's dimensions relative to its top-left
+corner by 1 pixel. Ctrl+Left/Right decrease/increase the width, Ctrl+Up/Down
+decrease/increase the height.
+
+*Ctrl + Shift + Arrow/hjkl*	Change the selection's dimensions as above, but by
+10 pixel increments.
+
+*Alt* (held) + *mouse*	Pan the selection's origin with the mouse without
+changing its dimensions.
+
+*Alt + Ctrl* (held) + *mouse*	Modify the selection's dimensions with the mouse,
+relative to the corner nearest the pointer when the modifiers were pressed.
 
 *Space*	 If currently making a selection, while space is held down, move the
 entire selection rather than change the selection's size as you move the
 pointer.
 
-*Shift*	Experimental. If the *-a* option wasn't specified, then set the aspect
-ratio to 1:1 while shift is held down, releasing it restores the un-constrained
-aspect ratio. *Note:* This behavior may change in the future depending on
-feedback.
+*Shift*	Experimental. While actively resizing with the mouse, if the *-a* option
+wasn't specified, set the aspect ratio to 1:1 while shift is held down;
+releasing it restores the un-constrained aspect ratio.
 
 
 # AUTHORS

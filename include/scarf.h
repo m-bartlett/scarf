@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <wayland-client.h>
+#include <xkbcommon/xkbcommon.h>
 
 #include "box.h"
 #include "cursor-shape-v1-client-protocol.h"
@@ -24,6 +25,16 @@ struct scarf_selection {
 struct scarf_state {
   bool running;
   bool edit_anchor;
+
+  // Modifier key state (tracked from keyboard events)
+  bool alt_pressed;
+  bool ctrl_pressed;
+  bool shift_pressed;
+
+  // Whether the pointer button is being used to resize from a corner
+  // (alt+ctrl mouse mode). Records which corner is anchored.
+  bool mouse_resize;
+  bool mouse_pan;
 
   struct wl_display *display;
   struct wl_registry *registry;
@@ -47,7 +58,6 @@ struct scarf_state {
   const char *font_family;
 
   uint32_t border_weight;
-  bool display_dimensions;
   bool single_point;
   bool restrict_selection;
   bool crosshairs;
@@ -105,6 +115,12 @@ struct scarf_seat {
   // keymap:
   struct xkb_keymap *xkb_keymap;
   struct xkb_state *xkb_state;
+
+  // key repeat:
+  int repeat_timer_fd;      // timerfd, -1 if none
+  int32_t repeat_rate;      // keys per second (0 = repeat disabled)
+  int32_t repeat_delay;     // milliseconds before first repeat
+  xkb_keysym_t repeat_sym;  // keysym currently being repeated
 
   // touch:
   struct wl_touch *wl_touch;

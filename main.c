@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/timerfd.h>
+#include <poll.h>
 #include <unistd.h>
 #include <wayland-cursor.h>
 #include <xkbcommon/xkbcommon.h>
@@ -26,6 +28,9 @@ static void noop() {
 }
 
 static void set_output_dirty(struct scarf_output *output);
+
+static void handle_active_selection_motion(struct scarf_seat *seat,
+		struct scarf_selection *current_selection);
 
 static int max(int a, int b) {
 	return (a > b) ? a : b;
@@ -50,11 +55,28 @@ static void move_seat(struct scarf_seat *seat, wl_fixed_t surface_x,
 		current_selection->anchor_y += y - current_selection->y;
 	}
 
+	// Alt-pan: move the whole selection box (and its anchor) by the mouse delta.
+	if (seat->state->mouse_pan && current_selection->has_selection) {
+		int dx = x - current_selection->x;
+		int dy = y - current_selection->y;
+		current_selection->selection.x += dx;
+		current_selection->selection.y += dy;
+		current_selection->anchor_x += dx;
+		current_selection->anchor_y += dy;
+	}
+
 	current_selection->x = x;
 	current_selection->y = y;
 }
 
 static void seat_update_selection(struct scarf_seat *seat) {
+	// Once we have a real, keyboard-editable selection (created by a drag or
+	// point placement) we must not let hovering over predefined boxes clobber
+	// it. Only preview predefined boxes in restrict mode.
+	if (!seat->state->restrict_selection &&
+			seat->pointer_selection.has_selection) {
+		return;
+	}
 	seat->pointer_selection.has_selection = false;
 
 	// find smallest box intersecting the cursor
@@ -113,6 +135,35 @@ static void handle_active_selection_motion(struct scarf_seat *seat, struct scarf
 	current_selection->selection.height = height;
 }
 
+// Route a pointer drag (button held) to the appropriate behaviour depending on
+// the active mode and held modifiers.
+static void handle_pointer_drag(struct scarf_seat *seat,
+		struct scarf_selection *current_selection) {
+	struct scarf_state *state = seat->state;
+
+	if (state->restrict_selection) {
+		return;
+	}
+
+	// In single-point mode, dragging just moves the point.
+	if (state->single_point) {
+		current_selection->selection.x = current_selection->x;
+		current_selection->selection.y = current_selection->y;
+		current_selection->selection.width = 1;
+		current_selection->selection.height = 1;
+		current_selection->has_selection = true;
+		return;
+	}
+
+	// Alt-pan: move_seat already translated the whole selection.
+	if (state->mouse_pan) {
+		return;
+	}
+
+	// Alt+Ctrl resize and normal drag both resize relative to the anchor.
+	handle_active_selection_motion(seat, current_selection);
+}
+
 static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer,
 		uint32_t serial, struct wl_surface *surface,
 		wl_fixed_t surface_x, wl_fixed_t surface_y) {
@@ -137,7 +188,7 @@ static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer,
 		seat_update_selection(seat);
 		break;
 	case WL_POINTER_BUTTON_STATE_PRESSED:
-		handle_active_selection_motion(seat, &seat->pointer_selection);
+		handle_pointer_drag(seat, &seat->pointer_selection);
 		break;
 	}
 
@@ -186,7 +237,7 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
 		seat_update_selection(seat);
 		break;
 	case WL_POINTER_BUTTON_STATE_PRESSED:
-		handle_active_selection_motion(seat, &seat->pointer_selection);
+		handle_pointer_drag(seat, &seat->pointer_selection);
 		break;
 	}
 
@@ -195,41 +246,119 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer,
 	}
 }
 
+// Determine which corner of the selection is closest to the given point, and
+// re-anchor the selection so the opposite corner becomes the drag anchor. This
+// is used for the alt+ctrl mouse resize mode.
+static void reanchor_to_nearest_corner(struct scarf_selection *sel,
+				       int32_t px, int32_t py) {
+	struct scarf_box *box = &sel->selection;
+	int32_t left = box->x;
+	int32_t right = box->x + box->width - 1;
+	int32_t top = box->y;
+	int32_t bottom = box->y + box->height - 1;
+
+	// nearest corner in x
+	bool near_left = abs(px - left) <= abs(px - right);
+	bool near_top = abs(py - top) <= abs(py - bottom);
+
+	// anchor is the opposite corner (stays fixed)
+	sel->anchor_x = near_left ? right : left;
+	sel->anchor_y = near_top ? bottom : top;
+}
+
 static void handle_selection_start(struct scarf_seat *seat,
 				   struct scarf_selection *current_selection) {
 	struct scarf_state *state = seat->state;
 
-	if (state->single_point) {
-		state->result.x = current_selection->x;
-		state->result.y = current_selection->y;
-		state->result.width = state->result.height = 1;
-		state->running = false;
-	} else if (state->restrict_selection) {
+	if (state->restrict_selection) {
 		if (current_selection->has_selection) {
 			state->result = current_selection->selection;
 			state->running = false;
 		}
-	} else {
+		return;
+	}
+
+	if (state->single_point) {
+		// Place/point a single-pixel selection that stays editable.
+		current_selection->selection.x = current_selection->x;
+		current_selection->selection.y = current_selection->y;
+		current_selection->selection.width = 1;
+		current_selection->selection.height = 1;
 		current_selection->anchor_x = current_selection->x;
 		current_selection->anchor_y = current_selection->y;
+		current_selection->has_selection = true;
+		seat_set_outputs_dirty(seat);
+		return;
 	}
+
+	// Alt+Ctrl: resize existing selection from the nearest corner.
+	if (state->alt_pressed && state->ctrl_pressed &&
+			current_selection->has_selection) {
+		state->mouse_resize = true;
+		reanchor_to_nearest_corner(current_selection,
+			current_selection->x, current_selection->y);
+		return;
+	}
+
+	// Alt: pan the existing selection's origin with the mouse.
+	if (state->alt_pressed && current_selection->has_selection) {
+		state->mouse_pan = true;
+		return;
+	}
+
+	// Normal: begin a new rectangle.
+	current_selection->anchor_x = current_selection->x;
+	current_selection->anchor_y = current_selection->y;
 }
 
 static void handle_selection_end(struct scarf_seat *seat,
 				 struct scarf_selection *current_selection) {
 	struct scarf_state *state = seat->state;
-	if (state->single_point || state->restrict_selection) {
+	if (state->restrict_selection) {
 		return;
 	}
+
+	state->mouse_resize = false;
+	state->mouse_pan = false;
+	state->resizing_selection = false;
+
+	if (state->single_point) {
+		return;
+	}
+
+	// The selection persists after mouse-up so it can be adjusted with the
+	// keyboard. It is only confirmed when Enter is pressed. Make sure we have
+	// a valid selection to keep editable.
+	if (!current_selection->has_selection) {
+		current_selection->selection.x = current_selection->x;
+		current_selection->selection.y = current_selection->y;
+		current_selection->selection.width = 1;
+		current_selection->selection.height = 1;
+		current_selection->has_selection = true;
+		seat_set_outputs_dirty(seat);
+	}
+}
+
+// Confirm the current selection (Enter key) and stop the event loop.
+static void handle_selection_confirm(struct scarf_seat *seat) {
+	struct scarf_state *state = seat->state;
+	struct scarf_selection *current_selection =
+		scarf_seat_current_selection(seat);
+
+	if (state->single_point) {
+		if (current_selection->has_selection) {
+			state->result.x = current_selection->selection.x;
+			state->result.y = current_selection->selection.y;
+			state->result.width = state->result.height = 1;
+			state->running = false;
+		}
+		return;
+	}
+
 	if (current_selection->has_selection) {
 		state->result = current_selection->selection;
-	} else {
-		state->result.x = current_selection->x;
-		state->result.y = current_selection->y;
-		state->result.width = state->result.height = 1;
+		state->running = false;
 	}
-	state->resizing_selection = false;
-	state->running = false;
 }
 
 static void handle_selection_cancelled(struct scarf_seat *seat) {
@@ -237,6 +366,8 @@ static void handle_selection_cancelled(struct scarf_seat *seat) {
 	seat->pointer_selection.has_selection = false;
 	seat->touch_selection.has_selection = false;
 	state->edit_anchor = false;
+	state->mouse_resize = false;
+	state->mouse_pan = false;
 	state->running = false;
 }
 
@@ -308,6 +439,133 @@ static void recompute_selection(struct scarf_seat *seat) {
 	}
 }
 
+// Direction of a keyboard nudge.
+enum nudge_dir { NUDGE_LEFT, NUDGE_RIGHT, NUDGE_UP, NUDGE_DOWN };
+
+// Apply an arrow/hjkl keyboard action to the current selection.
+// - no ctrl: move the whole selection (origin) by `step` pixels.
+// - ctrl:    resize the selection relative to its top-left corner by `step`.
+static bool handle_keyboard_nudge(struct scarf_seat *seat,
+		enum nudge_dir dir, int step) {
+	struct scarf_state *state = seat->state;
+	struct scarf_selection *sel = scarf_seat_current_selection(seat);
+
+	if (!sel->has_selection) {
+		return false;
+	}
+
+	struct scarf_box *box = &sel->selection;
+
+	if (state->ctrl_pressed && !state->single_point) {
+		// Resize relative to the top-left origin.
+		switch (dir) {
+		case NUDGE_LEFT:
+			box->width -= step;
+			break;
+		case NUDGE_RIGHT:
+			box->width += step;
+			break;
+		case NUDGE_UP:
+			box->height -= step;
+			break;
+		case NUDGE_DOWN:
+			box->height += step;
+			break;
+		}
+		if (box->width < 1) {
+			box->width = 1;
+		}
+		if (box->height < 1) {
+			box->height = 1;
+		}
+	} else {
+		// Move the whole selection (origin).
+		switch (dir) {
+		case NUDGE_LEFT:
+			box->x -= step;
+			break;
+		case NUDGE_RIGHT:
+			box->x += step;
+			break;
+		case NUDGE_UP:
+			box->y -= step;
+			break;
+		case NUDGE_DOWN:
+			box->y += step;
+			break;
+		}
+	}
+
+	// Keep the anchor/point coordinates in sync so subsequent mouse actions
+	// behave sensibly.
+	sel->anchor_x = box->x;
+	sel->anchor_y = box->y;
+	sel->x = box->x;
+	sel->y = box->y;
+
+	// A keyboard move can move the selection between outputs, so mark all
+	// outputs dirty.
+	struct scarf_output *output;
+	wl_list_for_each(output, &state->outputs, link) {
+		set_output_dirty(output);
+	}
+	return true;
+}
+
+// Apply the movement/resize action for a nudge keysym. Returns true if the
+// keysym is a repeatable nudge key (arrows/hjkl), false otherwise.
+static bool apply_nudge_keysym(struct scarf_seat *seat, xkb_keysym_t keysym) {
+	struct scarf_state *state = seat->state;
+	int step = state->shift_pressed ? 10 : 1;
+	switch (keysym) {
+	case XKB_KEY_Left:
+	case XKB_KEY_h:
+		handle_keyboard_nudge(seat, NUDGE_LEFT, step);
+		return true;
+	case XKB_KEY_Right:
+	case XKB_KEY_l:
+		handle_keyboard_nudge(seat, NUDGE_RIGHT, step);
+		return true;
+	case XKB_KEY_Up:
+	case XKB_KEY_k:
+		handle_keyboard_nudge(seat, NUDGE_UP, step);
+		return true;
+	case XKB_KEY_Down:
+	case XKB_KEY_j:
+		handle_keyboard_nudge(seat, NUDGE_DOWN, step);
+		return true;
+	}
+	return false;
+}
+
+// Arm the key-repeat timer for the given keysym, using the compositor-provided
+// repeat rate/delay. Called when a repeatable key is pressed.
+static void seat_start_repeat(struct scarf_seat *seat, xkb_keysym_t keysym) {
+	if (seat->repeat_timer_fd < 0 || seat->repeat_rate <= 0) {
+		return;
+	}
+	seat->repeat_sym = keysym;
+	struct itimerspec its = {0};
+	// initial delay before repeating
+	its.it_value.tv_sec = seat->repeat_delay / 1000;
+	its.it_value.tv_nsec = (seat->repeat_delay % 1000) * 1000000L;
+	// subsequent interval
+	long interval_ns = 1000000000L / seat->repeat_rate;
+	its.it_interval.tv_sec = interval_ns / 1000000000L;
+	its.it_interval.tv_nsec = interval_ns % 1000000000L;
+	timerfd_settime(seat->repeat_timer_fd, 0, &its, NULL);
+}
+
+// Disarm the key-repeat timer.
+static void seat_stop_repeat(struct scarf_seat *seat) {
+	if (seat->repeat_timer_fd < 0) {
+		return;
+	}
+	struct itimerspec its = {0};
+	timerfd_settime(seat->repeat_timer_fd, 0, &its, NULL);
+	seat->repeat_sym = XKB_KEY_NoSymbol;
+}
+
 static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 		const uint32_t serial, const uint32_t time, const uint32_t key,
 		const uint32_t key_state) {
@@ -317,9 +575,21 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 
 	switch (key_state) {
 	case WL_KEYBOARD_KEY_STATE_PRESSED:
+		// Repeatable movement/resize keys.
+		if (apply_nudge_keysym(seat, keysym)) {
+			seat_start_repeat(seat, keysym);
+			break;
+		}
 		switch (keysym) {
 		case XKB_KEY_Escape:
+		case XKB_KEY_q:
+		case XKB_KEY_Q:
 			handle_selection_cancelled(seat);
+			break;
+
+		case XKB_KEY_Return:
+		case XKB_KEY_KP_Enter:
+			handle_selection_confirm(seat);
 			break;
 
 		case XKB_KEY_space:
@@ -331,28 +601,37 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 			break;
 		case XKB_KEY_Shift_L:
 		case XKB_KEY_Shift_R:
-			if (!state->fixed_aspect_ratio) {
+			if (!state->fixed_aspect_ratio && state->resizing_selection) {
 				state->aspect_ratio = 1;
-				if (state->resizing_selection) {
-					recompute_selection(seat);
-				}
+				recompute_selection(seat);
 			}
 			break;
 		}
 		break;
 
 	case WL_KEYBOARD_KEY_STATE_RELEASED:
+		// Stop repeating if the released key is the one being repeated.
+		if (keysym == seat->repeat_sym) {
+			seat_stop_repeat(seat);
+		}
 		if (keysym == XKB_KEY_space) {
 			state->edit_anchor = false;
 		} else if (!state->fixed_aspect_ratio && (keysym == XKB_KEY_Shift_L || keysym == XKB_KEY_Shift_R)) {
-			state->aspect_ratio = 0;
 			if (state->resizing_selection) {
+				state->aspect_ratio = 0;
 				recompute_selection(seat);
 			}
 		}
 		break;
 	}
 
+}
+
+static void keyboard_handle_repeat_info(void *data,
+		struct wl_keyboard *wl_keyboard, int32_t rate, int32_t delay) {
+	struct scarf_seat *seat = data;
+	seat->repeat_rate = rate;
+	seat->repeat_delay = delay;
 }
 
 static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboard,
@@ -362,6 +641,14 @@ static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboar
 	struct scarf_seat *seat = data;
 	xkb_state_update_mask(seat->xkb_state, mods_depressed, mods_latched,
 			mods_locked, 0, 0, group);
+
+	struct scarf_state *state = seat->state;
+	state->ctrl_pressed = xkb_state_mod_name_is_active(seat->xkb_state,
+			XKB_MOD_NAME_CTRL, XKB_STATE_MODS_EFFECTIVE) > 0;
+	state->alt_pressed = xkb_state_mod_name_is_active(seat->xkb_state,
+			XKB_MOD_NAME_ALT, XKB_STATE_MODS_EFFECTIVE) > 0;
+	state->shift_pressed = xkb_state_mod_name_is_active(seat->xkb_state,
+			XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE) > 0;
 }
 
 static const struct wl_keyboard_listener keyboard_listener = {
@@ -370,6 +657,7 @@ static const struct wl_keyboard_listener keyboard_listener = {
 	.leave = noop,
 	.key = keyboard_handle_key,
 	.modifiers = keyboard_handle_modifiers,
+	.repeat_info = keyboard_handle_repeat_info,
 };
 
 static void touch_handle_down(void *data, struct wl_touch *touch,
@@ -447,6 +735,7 @@ static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
 
 static const struct wl_seat_listener seat_listener = {
 	.capabilities = seat_handle_capabilities,
+	.name = noop,
 };
 
 static void create_seat(struct scarf_state *state, struct wl_seat *wl_seat) {
@@ -458,6 +747,8 @@ static void create_seat(struct scarf_state *state, struct wl_seat *wl_seat) {
 	seat->state = state;
 	seat->wl_seat = wl_seat;
 	seat->touch_id = TOUCH_ID_EMPTY;
+	seat->repeat_sym = XKB_KEY_NoSymbol;
+	seat->repeat_timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
 	wl_list_insert(&state->seats, &seat->link);
 	wl_seat_add_listener(wl_seat, &seat_listener, seat);
 }
@@ -476,6 +767,9 @@ static void destroy_seat(struct scarf_seat *seat) {
 	}
 	xkb_state_unref(seat->xkb_state);
 	xkb_keymap_unref(seat->xkb_keymap);
+	if (seat->repeat_timer_fd >= 0) {
+		close(seat->repeat_timer_fd);
+	}
 	wl_seat_destroy(seat->wl_seat);
 	free(seat);
 }
@@ -699,7 +993,8 @@ static void handle_global(void *data, struct wl_registry *registry,
 			&zwlr_layer_shell_v1_interface, 1);
 	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
 		struct wl_seat *wl_seat =
-			wl_registry_bind(registry, name, &wl_seat_interface, 1);
+			wl_registry_bind(registry, name, &wl_seat_interface,
+				version < 4 ? version : 4);
 		create_seat(state, wl_seat);
 	} else if (strcmp(interface, wl_output_interface.name) == 0) {
 		struct wl_output *wl_output =
@@ -1107,14 +1402,71 @@ int main(int argc, char *argv[]) {
 	}
 
 	state.running = true;
-	while (state.running && wl_display_dispatch(state.display) != -1) {
-		// This space intentionally left blank
+
+	// Event loop: poll the Wayland display fd along with each seat's key
+	// repeat timer fd so that held movement/resize keys fire repeatedly.
+	int n_seats = wl_list_length(&state.seats);
+	int wl_fd = wl_display_get_fd(state.display);
+	struct pollfd *pfds = calloc(n_seats + 1, sizeof(struct pollfd));
+	struct scarf_seat **pfd_seats = calloc(n_seats + 1, sizeof(struct scarf_seat *));
+
+	while (state.running) {
+		// Flush any pending requests before blocking.
+		wl_display_flush(state.display);
+
+		int nfds = 0;
+		pfds[nfds].fd = wl_fd;
+		pfds[nfds].events = POLLIN;
+		pfd_seats[nfds] = NULL;
+		nfds++;
+
+		wl_list_for_each(seat, &state.seats, link) {
+			if (seat->repeat_timer_fd >= 0) {
+				pfds[nfds].fd = seat->repeat_timer_fd;
+				pfds[nfds].events = POLLIN;
+				pfd_seats[nfds] = seat;
+				nfds++;
+			}
+		}
+
+		if (poll(pfds, nfds, -1) < 0) {
+			if (errno == EINTR) {
+				continue;
+			}
+			break;
+		}
+
+		for (int i = 0; i < nfds; i++) {
+			if (!(pfds[i].revents & POLLIN)) {
+				continue;
+			}
+			if (pfd_seats[i] == NULL) {
+				// Wayland display readable.
+				if (wl_display_dispatch(state.display) == -1) {
+					state.running = false;
+				}
+			} else {
+				// Key repeat timer expired; drain it and fire the action.
+				struct scarf_seat *rseat = pfd_seats[i];
+				uint64_t expirations = 0;
+				if (read(rseat->repeat_timer_fd, &expirations,
+						sizeof(expirations)) > 0) {
+					if (rseat->repeat_sym != XKB_KEY_NoSymbol) {
+						for (uint64_t e = 0; e < expirations; e++) {
+							apply_nudge_keysym(rseat, rseat->repeat_sym);
+						}
+					}
+				}
+			}
+		}
 	}
+
+	free(pfds);
+	free(pfd_seats);
 
 	char *result_str = 0;
 	size_t length;
 	if (state.result.width == 0 && state.result.height == 0) {
-		fprintf(stderr, "selection cancelled\n");
 		status = EXIT_FAILURE;
 	} else {
 		FILE *stream = open_memstream(&result_str, &length);
