@@ -74,19 +74,34 @@ void render(struct scarf_output *output) {
 		draw_rect(cairo, sel_box, state->colors.border);
 		cairo_stroke(cairo);
 
-		if (state->display_dimensions) {
+		// Draw the "X,Y WxH" geometry label above the rectangle, or below
+		// it if there isn't enough room at the top.
+		{
 			cairo_select_font_face(cairo, state->font_family,
 					       CAIRO_FONT_SLANT_NORMAL,
 					       CAIRO_FONT_WEIGHT_NORMAL);
 			cairo_set_font_size(cairo, 14);
 			set_source_u32(cairo, state->colors.border);
-			// buffer of 12 can hold selections up to 99999x99999
-			char dimensions[12];
-			snprintf(dimensions, sizeof(dimensions), "%ix%i",
+			char geom[48];
+			snprintf(geom, sizeof(geom), "%d,%d %dx%d",
+				 sel_box->x, sel_box->y,
 				 sel_box->width, sel_box->height);
-			cairo_move_to(cairo, sel_box->x + sel_box->width + 10,
-				      sel_box->y + sel_box->height + 20);
-			cairo_show_text(cairo, dimensions);
+
+			cairo_font_extents_t fe;
+			cairo_font_extents(cairo, &fe);
+			double text_height = fe.ascent + fe.descent;
+
+			double top_of_output = output->logical_geometry.y;
+			double label_y;
+			if (sel_box->y - text_height - 4 >= top_of_output) {
+				// enough room above
+				label_y = sel_box->y - 6;
+			} else {
+				// not enough room, place below the rectangle
+				label_y = sel_box->y + sel_box->height + fe.ascent + 4;
+			}
+			cairo_move_to(cairo, sel_box->x, label_y);
+			cairo_show_text(cairo, geom);
 		}
 	}
 }
