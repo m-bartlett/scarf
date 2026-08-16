@@ -25,55 +25,54 @@ held, the selection is moved instead of being resized.
 
 # OPTIONS
 
-*-h*
+*-h*, *--help*
 	Show help message and quit.
 
-*-d*
-	Display dimensions of selection.
-
-*-b* _color_
+*-b*, *--background* _color_
 	Set background color. Default is #FFFFFF40. See *COLORS* for more detail.
 
-*-c* _color_
+*-c*, *--border-color* _color_
 	Set border color. Default is #000000FF. See *COLORS* for more detail.
 
-*-s* _color_
+*-s*, *--selection-color* _color_
 	Set selection color. Default is #00000000. See *COLORS* for more detail.
 
-*-B* _color_
+*-B*, *--choice-color* _color_
 	Set color for highlighting predefined rectangles from standard input when not
 	selected. Default is #FFFFFF40.
 
-*-F* _font family_
-	Set the font family name when displaying the dimensions box. Only useful
-	when combined with the -d option. The available font family names guaranteed
-	to work are the standard generic CSS2 options: serif, sans-serif,
-	monospace, cursive and fantasy. It defaults to the sans-serif family name.
+*-F*, *--font-family* _font family_
+	Set the font family name used when drawing the geometry label. The available
+	font family names guaranteed to work are the standard generic CSS2 options:
+	serif, sans-serif, monospace, cursive and fantasy. It defaults to the
+	sans-serif family name.
 
-*-w* _weight_
+*-w*, *--border-weight* _weight_
 	Set border weight. Default is 2.
 
-*-f* _format_
+*-f*, *--format* _format_
 	Set format. See *FORMAT* for more detail.
 
-*-p*
-	Select a single pixel instead of a rectangle. This mode ignores any
-	predefined rectangles read from the standard input.
+*-p*, *--point*
+	Select a single point instead of a rectangle. The point is drawn as a circle
+	using the current border color and weight, and its coordinates are printed
+	underneath. This mode ignores any predefined rectangles read from the
+	standard input.
 
-*-o*
+*-o*, *--outputs*
 	Add predefined rectangles for all outputs, as if provided on standard input.
 	The label will be the name of the output.
 
-*-r*
+*-r*, *--restrict*
 	Require the user to select one of the predefined rectangles. These can come
 	from standard input, if *-o* is used, the rectangles of all display outputs.
 	This option conflicts with *-p*.
 
-*-a* _width_:_height_
+*-a*, *--aspect-ratio* _width_:_height_
 	Force selections to have the given aspect ratio. This constraint is not
 	applied to the predefined rectangles specified using *-o*.
 
-*-x*
+*-x*, *--crosshairs*
 	Draw fullscreen crosshairs on the display output containing the cursor until
 	a selection is started. This help aligning the origin of the selection.
 
