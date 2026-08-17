@@ -61,7 +61,7 @@ swaymsg -t get_tree | jq -r '.. | select(.pid? and .visible?) | "\(.rect.x+.wind
 
 ## License
 
-MIT
+0BSD
 
 [grim]: https://gitlab.freedesktop.org/emersion/grim
 [GitHub]: https://github.com/m-bartlett/scarf
